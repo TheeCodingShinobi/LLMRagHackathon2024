@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html>
+ <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.3/socket.io.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"	crossorigin="anonymous" referrerpolicy="no-referrer" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw-src.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>Conversational App with NVIDIA NiMs</title>
+    <style>
+        body {
+            display: flex;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            width: 100%;
+        }
+		.container.hidden{
+			display: none;
+            
+		}
+        .chat-container {
+            flex: 3;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #ddd;
+        }
+        .sidebar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 10px;
+            background-color: #f4f4f4;
+            overflow-y: auto;
+        }
+        .suggestion-pill {
+            display: inline-block;
+            padding: 20px 25px;
+            margin: 5px 0;
+            background-color: #007bff;
+            color: white;
+            border-radius: 50px;
+            font-size: 14px;
+        }
+        .chat-history {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            <!-- justify-content: flex-end; -->
+            padding: 10px;
+            overflow-y: scroll;
+        }
+        .chat-input-container {
+            display: flex;
+            border-top: 1px solid #ddd;
+        }
+        .chat-input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 0;
+            outline: none;
+            font-size: 16px;
+        }
+        .chat-input-container button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .chat-input-container button:hover {
+            background-color: #0056b3;
+        }
+        .message {
+			margin: 5px 15% 5px 0;
+            padding: 10px;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+			white-space:pre-wrap;
+        }
+        .message.user {
+			margin: 5px 0 5px 15%;
+            background-color: #e0f7fa;
+			
+        }
+		
+		#suggestionContainer .suggestion-pill {
+			transition: opacity 0.5s ease, transform 0.5s ease;
+		}
+		#suggestionContainer .suggestion-pill:nth-child(2) {
+			transition: opacity 1.0s ease, transform 1.0s ease;
+		}
+		#suggestionContainer .suggestion-pill:nth-child(3) {
+			transition: opacity 1.5s ease, transform 1.5s ease;
+		}
+		#suggestionContainer .suggestion-pill:nth-child(4) {
+			transition: opacity 2.0s ease, transform 2.0s ease;
+		}
+		#suggestionContainer .suggestion-pill:nth-child(5) {
+			transition: opacity 2.5s ease, transform 2.5s ease;
+		}
+
+		#suggestionContainer .suggestion-pill {
+			opacity: 1;
+			transform: translateX(0);
+			cursor: pointer;
+			pointer-events: auto; /* Enable clicks when not disabled */
+		}
+
+		#suggestionContainer.disabled .suggestion-pill{
+			opacity: 0;
+			transform: translateX(100px);
+			pointer-events: none; /* Prevent clicks when disabled */
+		
+		}
+			
+		.input-container {
+			display: flex;
+			align-items: center;
+		}
+
+		.input-container button, .input-container input[type="text"] {
+			margin-right: 10px;
+		}
+
+		#imagePreview {
+			max-width: 100px;
+			max-height: 100px;
+			margin-right: 10px;
+		}
+
+		.top-bar {
+			background-color: #333;
+			overflow: hidden;
+		}
+
+		.top-bar button {
+			background-color: #333;
+			color: white;
+			padding: 14px 20px;
+			border: none;
+			cursor: pointer;
+			float: left;
+		}
+
+		.top-bar button:hover {
+			background-color: #ddd;
+			color: black;
+		}
+		
+		.fullmap{
+			flex: 1; /* Takes up remaining space */
+	
+			height:100%;
+		}
+
+		#container2 .sidebar {
+			flex:.2;
+			height: 100%; /* Full height to match the map height */
+			overflow-y: auto; /* Allows scrolling if many items are added */
+			padding: 10px;
+			box-sizing: border-box; /* Includes padding in width calculation */
+			background: #f4f4f4; /* Just for better visibility */
+			position: relative; /* For positioning the date picker absolutely within sidebar */
+		}
+
+		#datePickerBtn {
+			width: 100%;
+			padding: 10px;
+			margin-bottom: 10px;
+		}
+
+		#datePicker {
+			width: 100%;
+			padding: 10px;
+			margin-bottom: 20px;
+		}
+
+		.geometry-entry {
+			padding: 5px;
+			margin-bottom: 2px;
+			border-bottom: 1px solid #ccc;
+		}
+    </style>
+</head>
+<body>
+	<div class="top-bar">
+        <button id="btn-container1">Chat Window</button>
+        <button id="btn-container2">Map Window</button>
+    </div>
+    <div class="container" id="container1">
+        <div class="chat-container">
+            <div class="chat-history" id="chatHistoryContainer">
+                <!-- <div class="message user">Hello! How can I assist you today?</div> -->
+                <!-- <div class="message">Hi, I need help with my order.</div> -->
+            </div>
+            <div class="chat-input-container">
+				<input type="file" id="imageUpload" accept="image/*" style="display: none;">
+				<button id="uploadButton">Upload Image</button>
+                <input type="text" class="chat-input" id="userChatBox" placeholder="Type your message here..." onkeypress="clickPress(event)">
+                <button onclick="sendUserMessage()">Send</button>
+            </div>
+        </div>
+        <div class="sidebar disabled" id="suggestionContainer">
+            <div class="suggestion-pill" onclick="sendQuickMessage(this)">Suggestion 1</div>
+            <div class="suggestion-pill" onclick="sendQuickMessage(this)">Suggestion 2</div>
+            <div class="suggestion-pill" onclick="sendQuickMessage(this)">Suggestion 3</div>
+            <div class="suggestion-pill" onclick="sendQuickMessage(this)">Suggestion 4</div>
+            <div class="suggestion-pill" onclick="sendQuickMessage(this)">Suggestion 5</div>
+        </div>
+    </div>
+    <div class="container" id="container2">
+		<div id="map" class="fullmap"></div>
+		<div class="sidebar" >
+		
+			<button id="datePickerBtn">Pick a Date</button>
+			<input type="datetime-local" id="datePicker" style="display: none;">
+			<h3>Layer Names</h3>
+			<div id="geometryList">
+			</div>
+			<!-- Geometry names will be added here dynamically -->
+		</div>
+    </div>
+	<script src="https://code.jquery.com/jquery-3.7.1.min.js">
+	</script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<script>
+		let userChatBoxRef, chatHistoryContainerRef, 
+			suggestionPillRefs, suggestionContainerRef;
+		let base64Image = "";
+		let drawnItems;
+		$(document).ready(function() { 
+			
+			
+			$('#btn-container1').click(function() {
+				$('.container').hide(); // Hide all containers
+				$('#container1').show(); // Show the first container
+			});
+
+			$('#btn-container2').click(function() {
+				$('.container').hide(); // Hide all containers
+				$('#container2').show(); // Show the second container
+				window.dispatchEvent(new Event('resize'));
+			});
+			
+			$('#btn-container1').click();
+			
+			$.ajax({
+				type : "POST",
+				url : "/GetMessageHistory",
+				data: JSON.stringify({chatSession:"MainChat"}, null, '\t'),
+				contentType: 'application/json;charset=UTF-8',
+				success: function(result) {
+					currentWord = "";
+					currentActor = "";
+					console.log(result);
+					chatHistoryContainerRef.empty()
+					for(let i = 0; i< result.message.length; i++){
+						let newDiv = $('<div>', {
+							class: 'message ' + (result.message[i].type=="human"?'user':""),
+							//text: result.message[i].content
+							text: (
+									typeof(result.message[i].content)=="object"?
+										result.message[i].content[0].text :
+										result.message[i].content
+								  )
+						}).appendTo(chatHistoryContainerRef);
+						
+						if(result.message[i].type=="ai"){
+							$.ajax({
+								type : "POST",
+								url : "/GetAIAudio",
+								data: JSON.stringify({message: result.message[i].content}, null, '\t'),
+								contentType: 'application/json;charset=UTF-8',
+								success: function(result2) {
+									<!-- let newAudio = $('<audio>', { -->
+										<!-- src: result2.audioURL -->
+									<!-- }).appendTo(newDiv); -->
+									<!-- console.log(result2); -->
+								}
+							});
+						}
+					}
+					for(let i = result.message.length - 1; i>0; i--){
+						if(result.message[i].type=="ai"){
+							$.ajax({
+								type : "POST",
+								url : "/GetQuestionRecommendations",
+								data: JSON.stringify({message: result.message[i].content}, null, '\t'),
+								contentType: 'application/json;charset=UTF-8',
+								success: function(result) {
+									console.log(result);
+									//userChatBoxRef.val("");
+								}
+							});
+							break;
+						}
+					}
+					
+					
+					//console.log(result);
+				}
+			});
+			
+			 $('#uploadButton').click(function() {
+				$('#imageUpload').click();
+			});
+
+			// Handle file selection
+			$('#imageUpload').change(function(event) {
+				const file = event.target.files[0];
+				if (file) {
+					const reader = new FileReader();
+					reader.onload = function(e) {
+						base64Image = e.target.result;
+
+						// Display the image preview in the chatbox
+						const img = $('<img>').attr('src', base64Image).attr('id', 'imagePreview');
+						$('.input-container').prepend(img);
+					};
+					reader.readAsDataURL(file);
+				}
+			});
+			
+			userChatBoxRef = $("#userChatBox");
+			chatHistoryContainerRef = $("#chatHistoryContainer");
+			suggestionPillRefs = $("#suggestionContainer .suggestion-pill");
+			suggestionContainerRef = $("#suggestionContainer");
+			
+			var map = L.map('map').setView([36.004391, -80.088001], 19);
+			 //L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
+//				 attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+			 <!-- L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { -->
+				 <!-- attribution: '&copy; <a href="http://google.com">Google</a> ' -->
+			 <!-- }).addTo(map); -->
+			var Esri_WorldImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+				attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+			});
+			Esri_WorldImagery.addTo(map);
+			
+
+			// FeatureGroup is to store editable layers			 
+			drawnItems = new L.FeatureGroup();
+			map.addLayer(drawnItems);
+
+			var drawControl = new L.Control.Draw({
+				edit: {
+					featureGroup: drawnItems
+				}
+			});
+			map.addControl(drawControl);
+
+			map.on(L.Draw.Event.CREATED, function(event) {
+				var layer = event.layer;
+				drawnItems.addLayer(layer);
+				var entry = addGeometryEntry(layer);
+				layer.on('remove', function() {
+					entry.remove(); // Remove the entry when the layer is removed
+				});
+				sendData(layer);
+			});
+			
+			map.on(L.Draw.Event.DELETED, function(event) {
+				event.layers.eachLayer(function(layer) {
+					drawnItems.removeLayer(layer);
+					sendData(layer, true); // Send data with delete flag
+				});
+			});
+
+			function addGeometryEntry(layer) {
+				var list = document.getElementById('geometryList');
+				var entry = document.createElement('div');
+				entry.className = 'geometry-entry';
+				var input = document.createElement('input');
+				input.type = 'text';
+				input.placeholder = 'Enter name';
+				input.value = layer.feature.properties.name;
+				input.onchange = function() {
+					layer.feature.properties.name = input.value;
+					sendData(layer);
+				};
+				entry.appendChild(input);
+				list.appendChild(entry);
+				return entry;
+			}
+
+			function sendData(layer, isDeleted = false) {
+				var geoJson = drawnItems.toGeoJSON();
+				var dataToSend = { geoJson: geoJson, deleted: isDeleted };
+				fetch('/SaveUserMap', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(geoJson)
+				}).then(response => response.json()).then(data => {
+					console.log('Saved:', data);
+				});
+			}
+			// Load existing geometries from server
+			fetch('/files/usermap.json').then(response => response.json()).then(data => {
+				L.geoJSON(data).eachLayer(function(layer) {
+					drawnItems.addLayer(layer);
+					addGeometryEntry(layer);
+				});
+			}).catch(err => console.log('Error loading data:', err));
+			
+		    var datePickerBtn = document.getElementById('datePickerBtn');
+			var datePicker = document.getElementById('datePicker');
+
+			datePickerBtn.onclick = function() {
+				datePicker.style.display = 'block'; // Show the date picker when button is clicked
+			};
+
+			datePicker.onchange = function() {
+				updateMapItems(this.value); // Function to update map items based on selected date
+			};
+
+			function updateMapItems(selectedDate) {
+				// Assuming each layer's properties include a date in ISO format (yyyy-mm-ddThh:mm)
+				drawnItems.eachLayer(function(layer) {
+					if (layer.feature.properties.date === selectedDate) {
+						layer.setStyle({opacity: 1, fillOpacity: 0.8}); // Highlight matching items
+					} else {
+						layer.setStyle({opacity: 0.5, fillOpacity: 0.2}); // Dim non-matching items
+					}
+				});
+			}
+			
+			
+		});
+		function sendUserMessage(){
+			$(suggestionContainerRef).addClass("disabled");
+			newChatMessage({
+				type:"human",
+				content:userChatBoxRef.val(),
+				image: base64Image
+			});
+			 
+			$.ajax({
+				type : "POST",
+				url : "/NewUserMessage",
+				data: JSON.stringify({message: userChatBoxRef.val(), image:base64Image}, null, '\t'),
+				contentType: 'application/json;charset=UTF-8',
+				success: function(result) {
+					console.log(result);
+					userChatBoxRef.val("");
+					$('#imagePreview').remove();
+					base64Image = '';
+				}
+			});
+		}
+		
+		function newChatMessage(messageContent){
+			let newDiv = $('<div>', {
+				class: 'message ' + (messageContent.type=="human"?'user':""),
+				text: (
+						typeof(messageContent.content)=="object"?
+							messageContent.content[0].text :
+							messageContent.content
+					  )
+			}).appendTo(chatHistoryContainerRef);
+			if(messageContent.type=="ai"){
+				$.ajax({
+					type : "POST",
+					url : "/GetAIAudio",
+					data: JSON.stringify({message: messageContent.content}, null, '\t'),
+					contentType: 'application/json;charset=UTF-8',
+					success: function(result) {
+						let newAudio = $('<audio>', {
+							src: result.audioURL
+						}).appendTo(newDiv);
+						console.log(result);
+					}
+				});
+			}
+			if (messageContent.image) {
+				const img = $('<img>').attr('src', messageContent.image).css({
+					'max-width': '100px',
+					'max-height': '100px',
+					'display': 'block',
+					'margin-top': '10px'
+				});
+				img.appendTo($(newDiv));
+				
+			}
+			;
+		}
+		
+		function sendQuickMessage(pillButtonRef){
+			if($(suggestionContainerRef).hasClass("disabled")){
+				return;
+			}
+			$(suggestionContainerRef).addClass("disabled");
+			newChatMessage({
+				type:"human",
+				content:$(pillButtonRef).text()
+			});
+			$(document).ready(function() { 
+				$.ajax({
+					type : "POST",
+					url : "/NewUserMessage",
+					data: JSON.stringify({message: $(pillButtonRef).text()}, null, '\t'),
+					contentType: 'application/json;charset=UTF-8',
+					success: function(result) {
+						console.log(result);
+						userChatBoxRef.val("");
+					}
+				});
+			});
+		}
+		
+		function clickPress(event) {
+			if (event.keyCode == 13) {
+				 sendUserMessage();
+			}
+		}
+	</script>
+	<script type="text/javascript" charset="utf-8">
+		var socket = io();
+		socket.on('connect', function() {
+			socket.emit('my event', {data: 'I\'m connected!'});
+		});
+		
+		
+		// event handler for server sent data
+		// the data is displayed in the "Received" section of the page
+		socket.on('LLMBroadcast', function(msg) {
+			//console.log(msg);
+			newChatMessage({
+				type:"ai",
+				content:msg
+			});
+			$.ajax({
+				type : "POST",
+				url : "/GetQuestionRecommendations",
+				data: JSON.stringify({message: msg}, null, '\t'),
+				contentType: 'application/json;charset=UTF-8',
+				success: function(result) {
+					console.log(result);
+					//userChatBoxRef.val("");
+				}
+			});
+		});
+		
+		// event handler for server sent data
+		// the data is displayed in the "Received" section of the page
+		socket.on('QuestionBroadcast', function(msg) {
+			for(let i = 0; i < msg.questions.length; i++){
+				$(suggestionPillRefs[i]).text(msg.questions[i]);
+			}
+			if(msg.questions.length>=5){
+				$(suggestionContainerRef).removeClass("disabled");
+			}
+			
+			console.log(msg);
+		});
+	</script>
+	<script>
+		
+	</script>
+
+</body>
+</html>
